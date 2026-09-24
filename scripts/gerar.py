@@ -11,13 +11,11 @@ pra HunterMono. Cada SVG embute so os caracteres que usa.
 Imagens: scripts/imagens, embutidas em base64 (SVG em <img> nao busca nada de fora).
 """
 import base64
-import hashlib
 import io
 import json
 import math
 import os
 import random
-import re
 import sys
 import urllib.request
 from datetime import date
@@ -710,24 +708,6 @@ def rodape():
     return t
 
 
-def carimbar_readme():
-    """Poe ?v=<hash do conteudo> em cada imagem do README. O GitHub guarda imagem
-    em cache por 5 min pela URL; com o hash, imagem que mudou ganha URL nova na hora."""
-    readme = RAIZ / "README.md"
-    texto = readme.read_text(encoding="utf-8")
-
-    def carimbo(m):
-        arq = ASSETS / f"{m.group(1)}.svg"
-        if not arq.exists():
-            return m.group(0)
-        return f"assets/{m.group(1)}.svg?v={hashlib.sha1(arq.read_bytes()).hexdigest()[:8]}"
-
-    novo = re.sub(r"assets/([\w-]+)\.svg(?:\?v=\w+)?", carimbo, texto)
-    if novo != texto:
-        readme.write_text(novo, encoding="utf-8")
-        print("  README.md  carimbado")
-
-
 # ----------------------------------------------------------------
 def main():
     print("gerando:")
@@ -747,7 +727,6 @@ def main():
         print("  floresta.svg  pulada (sem GITHUB_TOKEN)")
     else:
         floresta(*dados).salvar("floresta.svg")
-    carimbar_readme()
 
 
 if __name__ == "__main__":
