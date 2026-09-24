@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Gera os SVGs do perfil.
 
-Os cartoes fixos saem iguais toda vez (aleatoriedade com semente). So a floresta
-depende de dados: le o calendario de contribuicoes pela API do GitHub, por isso
-a Action roda este script todo dia. Sem GITHUB_TOKEN a floresta e pulada e o
-arquivo que ja existe fica como esta.
+Os cartoes fixos saem iguais toda vez (aleatoriedade com semente). A floresta
+depende do calendario de contribuicoes e a licenca usa o avatar atual, os dois
+lidos do GitHub, por isso a Action roda este script todo dia. Sem GITHUB_TOKEN a
+floresta e pulada e o arquivo que ja existe fica como esta.
 
 Fonte: subconjunto da Cascadia Mono (SIL OFL, ver fontes/OFL.txt) renomeado
 pra HunterMono. Cada SVG embute so os caracteres que usa.
+Imagens: scripts/imagens, embutidas em base64 (SVG em <img> nao busca nada de fora).
 """
 import base64
 import io
@@ -22,22 +23,28 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 ASSETS = RAIZ / "assets"
-FONTES = Path(__file__).resolve().parent / "fontes"
+AQUI = Path(__file__).resolve().parent
+FONTES = AQUI / "fontes"
+IMAGENS = AQUI / "imagens"
 USUARIO = os.environ.get("PERFIL", "NetoPissolato")
 
-# Paleta: base grafite neutra; o verde do Gon entra so como acento
+# Paleta: grafite neutro, ambar do Jajanken e do friso da jaqueta como acento.
+# O verde fica com as imagens do Gon e com o capim.
 BG0 = "#0a0b0d"
 BG1 = "#111317"
 BG2 = "#181b21"
 LINHA = "#272b33"
-VERDE = "#3ecf8e"
-VERDE_ESC = "#1d6f4b"
-AURA = "#6be3a8"
-MENTA = "#e7ebef"
+ACENTO = "#ffab40"
+ACENTO_ESC = "#b8641a"
+BRASA = "#ffd27a"
+CLARO = "#e7ebef"
 TEXTO = "#f1f3f5"
 SUAVE = "#9aa3ad"
 APAGADO = "#5f6772"
-OURO = "#e8b64c"
+OURO = "#f0c060"
+GRAMA = "#3fbf7f"
+GRAMA_ESC = "#1d6f4b"
+GRAMA_CLARA = "#9be8b8"
 AGUA = "#8cc8ff"
 VAGALUME = "#ffd66b"
 CINZA = "#8b949e"  # legivel em tema claro e escuro
@@ -51,6 +58,33 @@ def esc(s):
 
 def largura(texto, tam, ls=0):
     return len(texto) * (tam * AVANCO + ls)
+
+
+def quebrar(texto, tam, maximo):
+    linhas, atual = [], ""
+    for palavra in texto.split():
+        teste = f"{atual} {palavra}".strip()
+        if largura(teste, tam) > maximo and atual:
+            linhas.append(atual)
+            atual = palavra
+        else:
+            atual = teste
+    return linhas + [atual]
+
+
+def imagem(nome):
+    tipo = {"webp": "image/webp", "png": "image/png", "jpg": "image/jpeg"}[nome.rsplit(".", 1)[1]]
+    return f"data:{tipo};base64," + base64.b64encode((IMAGENS / nome).read_bytes()).decode()
+
+
+def avatar():
+    try:
+        with urllib.request.urlopen(f"https://github.com/{USUARIO}.png?size=320", timeout=20) as r:
+            tipo = r.headers.get_content_type()
+            return f"data:{tipo};base64," + base64.b64encode(r.read()).decode()
+    except Exception as e:  # sem rede: a licenca sai com silhueta
+        print(f"  avatar indisponivel ({e})")
+        return None
 
 
 _cache_fonte = {}
@@ -118,8 +152,9 @@ class Tela:
 
     def salvar(self, nome):
         ASSETS.mkdir(exist_ok=True)
-        (ASSETS / nome).write_text(self.svg(), encoding="utf-8")
-        print(f"  {nome}  {len(self.svg()) // 1024} KB")
+        conteudo = self.svg()
+        (ASSETS / nome).write_text(conteudo, encoding="utf-8")
+        print(f"  {nome}  {len(conteudo) // 1024} KB")
 
 
 FILTROS = (
@@ -131,33 +166,32 @@ FILTROS = (
 )
 
 
-def moldura(t, rx=22):
+def base(t, rx=22, fundo=None):
+    """Clip arredondado, fundo e abre o grupo recortado. Fechar com fechar()."""
     t.defs.append(f'<clipPath id="card"><rect width="{t.w}" height="{t.h}" rx="{rx}"/></clipPath>')
+    t.add('<g clip-path="url(#card)">', f'<rect width="{t.w}" height="{t.h}" fill="{fundo or BG1}"/>')
 
 
-def capim(rnd, x0, x1, base, hmin, hmax, cor, passo=6, grupos=10, classe="balanca"):
-    """Linha de capim com grupos que balancam em tempos diferentes."""
+def fechar(t, rx=22, borda=LINHA, opacidade=1):
+    t.add('</g>', f'<rect x=".75" y=".75" width="{t.w - 1.5}" height="{t.h - 1.5}" rx="{rx}" fill="none" '
+                  f'stroke="{borda}" stroke-opacity="{opacidade}" stroke-width="1.5"/>')
+
+
+def capim(rnd, x0, x1, chao, hmin, hmax, cor, passo=6, grupos=10):
     folhas = []
     x = x0
     while x < x1:
         h = rnd.uniform(hmin, hmax)
         w = rnd.uniform(1.6, 2.8)
         dobra = rnd.uniform(-5, 5)
-        folhas.append(
-            f"M{x - w:.1f} {base}Q{x - w + dobra * .3:.1f} {base - h * .5:.1f} {x + dobra:.1f} {base - h:.1f}"
-            f"Q{x + w + dobra * .3:.1f} {base - h * .5:.1f} {x + w:.1f} {base}Z"
-        )
+        folhas.append(f"M{x - w:.1f} {chao}Q{x - w + dobra * .3:.1f} {chao - h * .5:.1f} {x + dobra:.1f} {chao - h:.1f}"
+                      f"Q{x + w + dobra * .3:.1f} {chao - h * .5:.1f} {x + w:.1f} {chao}Z")
         x += rnd.uniform(passo * .6, passo * 1.4)
     tam = max(1, len(folhas) // grupos)
-    saida = []
-    for i in range(0, len(folhas), tam):
-        dur = rnd.uniform(4.5, 7.5)
-        atraso = rnd.uniform(0, 5)
-        saida.append(
-            f'<g class="{classe}" style="animation-duration:{dur:.1f}s;animation-delay:-{atraso:.1f}s">'
-            f'<path fill="{cor}" d="{"".join(folhas[i:i + tam])}"/></g>'
-        )
-    return "".join(saida)
+    return "".join(
+        f'<g class="balanca" style="animation-duration:{rnd.uniform(4.5, 7.5):.1f}s;animation-delay:-{rnd.uniform(0, 5):.1f}s">'
+        f'<path fill="{cor}" d="{"".join(folhas[i:i + tam])}"/></g>'
+        for i in range(0, len(folhas), tam))
 
 
 CSS_BALANCA = (
@@ -165,126 +199,107 @@ CSS_BALANCA = (
     "animation:balanca 6s ease-in-out infinite alternate}"
     "@keyframes balanca{from{transform:skewX(-4deg)}to{transform:skewX(4deg)}}"
 )
+CSS_VIVO = ".vivo{animation:vivo 2s ease-in-out infinite}@keyframes vivo{50%{opacity:.3}}"
+
+
+def pontos(t):
+    t.defs.append(f'<pattern id="pontos" width="28" height="28" patternUnits="userSpaceOnUse">'
+                  f'<circle cx="2" cy="2" r="1" fill="{LINHA}"/></pattern>')
+    t.add(f'<rect width="{t.w}" height="{t.h}" fill="url(#pontos)" opacity=".45"/>')
 
 
 # ---------------------------------------------------------------- cabecalho
+CICLO = 10  # segundos do jan-ken; o clarao do punho bate com o DEPLOY!
+DEPLOY_EM = 50  # % do ciclo
+
+
 def cabecalho():
     rnd = random.Random(405)
     t = Tela(1200, 400, "José Pissolato — Hunter de código",
-             "Cabeçalho animado: aura Nen verde em volta do crachá 405 do Exame Hunter.")
-    moldura(t, 24)
+             "Gon carregando o Jajanken ao lado do nome. O terminal digita saisho wa guu, jan, ken, DEPLOY "
+             "e o punho do Gon brilha no DEPLOY.")
+    # imagem do Gon: 1100x648, punho em (367, 222) no arquivo
+    esc_img, ix, iy = 470 / 648, 505, -18
+    pw, ph = 1100 * esc_img, 648 * esc_img
+    px, py = ix + 367 * esc_img, iy + 222 * esc_img
     t.defs.append(
-        f'<radialGradient id="fundo" cx="76%" cy="46%" r="80%"><stop offset="0" stop-color="{BG2}"/>'
-        f'<stop offset=".55" stop-color="{BG1}"/><stop offset="1" stop-color="{BG0}"/></radialGradient>'
-        f'<linearGradient id="anel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{AURA}"/>'
-        f'<stop offset=".5" stop-color="{VERDE}"/><stop offset="1" stop-color="{VERDE_ESC}"/></linearGradient>'
-        f'<pattern id="pontos" width="28" height="28" patternUnits="userSpaceOnUse">'
-        f'<circle cx="2" cy="2" r="1" fill="{LINHA}"/></pattern>'
-        '<path id="arco-cima" d="M848 200a72 72 0 0 1 144 0"/>'
-        '<path id="arco-baixo" d="M844 200a76 76 0 0 0 152 0"/>'
+        f'<radialGradient id="fundo" cx="72%" cy="40%" r="75%"><stop offset="0" stop-color="#1d1a17"/>'
+        f'<stop offset=".6" stop-color="{BG1}"/><stop offset="1" stop-color="{BG0}"/></radialGradient>'
+        f'<linearGradient id="some" gradientUnits="userSpaceOnUse" x1="{ix + 50}" y1="0" x2="{ix + 220}" y2="0">'
+        '<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff"/></linearGradient>'
+        f'<mask id="mascara"><rect width="1200" height="400" fill="url(#some)"/></mask>'
+        f'<radialGradient id="clarao"><stop offset="0" stop-color="#fff"/><stop offset=".25" stop-color="{BRASA}"/>'
+        f'<stop offset=".6" stop-color="{ACENTO}" stop-opacity=".35"/><stop offset="1" stop-color="{ACENTO}" stop-opacity="0"/>'
+        '</radialGradient>'
         + FILTROS
     )
+    a = DEPLOY_EM
     t.css.append(
         CSS_BALANCA
         + ".pulsa{transform-box:fill-box;transform-origin:center;animation:pulsa 4s ease-in-out infinite}"
-        "@keyframes pulsa{0%,100%{transform:scale(.94);opacity:.16}50%{transform:scale(1.07);opacity:.3}}"
-        ".lingua{transform-box:fill-box;transform-origin:center bottom;animation:lingua 2.8s ease-out infinite}"
-        "@keyframes lingua{0%{transform:translateY(0) scale(1,1);opacity:0}15%{opacity:.28}"
-        "100%{transform:translateY(-120px) scale(.35,1.5);opacity:0}}"
+        "@keyframes pulsa{0%,100%{transform:scale(.92);opacity:.18}50%{transform:scale(1.08);opacity:.32}}"
         ".sobe{animation:sobe 5s linear infinite}"
-        "@keyframes sobe{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-210px);opacity:0}}"
-        ".flutua{animation:flutua 6s ease-in-out infinite}"
-        "@keyframes flutua{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}"
-        ".gira{transform-box:view-box;transform-origin:920px 200px;animation:gira 60s linear infinite}"
-        "@keyframes gira{to{transform:rotate(360deg)}}"
-        ".cursor{animation:pisca 1s steps(1) infinite}"
-        "@keyframes pisca{50%{opacity:0}}"
+        "@keyframes sobe{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(-220px);opacity:0}}"
+        f".clarao{{transform-box:fill-box;transform-origin:center;mix-blend-mode:screen;animation:clarao {CICLO}s ease-out infinite}}"
+        f"@keyframes clarao{{0%,{a - 1}%{{transform:scale(.5);opacity:0}}{a}%{{transform:scale(1.35);opacity:1}}"
+        f"{a + 8}%{{transform:scale(1);opacity:.45}}90%{{transform:scale(.95);opacity:.3}}100%{{transform:scale(.5);opacity:0}}}}"
+        ".cursor{animation:pisca 1s steps(1) infinite}@keyframes pisca{50%{opacity:0}}"
     )
-    t.add('<g clip-path="url(#card)">',
-          f'<rect width="1200" height="400" fill="url(#fundo)"/>',
-          '<rect width="1200" height="400" fill="url(#pontos)" opacity=".5"/>')
+    base(t, 24, "url(#fundo)")
+    pontos(t)
 
-    # aura em volta do cracha
-    t.add(f'<ellipse class="pulsa" cx="920" cy="190" rx="170" ry="185" fill="{VERDE}" filter="url(#nevoa)" opacity=".5"/>',
-          f'<ellipse class="pulsa" style="animation-delay:-2s" cx="920" cy="175" rx="120" ry="150" fill="{AURA}" '
-          f'filter="url(#nevoa)" opacity=".35"/>')
-    for i in range(6):
-        x = 920 + rnd.uniform(-95, 95)
-        y = 150 + rnd.uniform(-10, 60)
-        t.add(f'<ellipse class="lingua" style="animation-delay:-{rnd.uniform(0, 2.8):.2f}s;animation-duration:{rnd.uniform(2.3, 3.4):.2f}s" '
-              f'cx="{x:.0f}" cy="{y:.0f}" rx="{rnd.uniform(18, 34):.0f}" ry="{rnd.uniform(34, 60):.0f}" '
-              f'fill="{rnd.choice([VERDE, AURA])}" filter="url(#nevoa-p)"/>')
-    for i in range(16):
-        x = 920 + rnd.uniform(-150, 150)
-        y = rnd.uniform(300, 380)
+    # brasa atras do punho e particulas subindo
+    t.add(f'<ellipse class="pulsa" cx="{px:.0f}" cy="{py + 20:.0f}" rx="210" ry="190" fill="{ACENTO}" filter="url(#nevoa)"/>')
+    for _ in range(18):
         t.add(f'<circle class="sobe" style="animation-delay:-{rnd.uniform(0, 5):.2f}s;animation-duration:{rnd.uniform(3.8, 6.5):.2f}s" '
-              f'cx="{x:.0f}" cy="{y:.0f}" r="{rnd.uniform(1.2, 3):.1f}" fill="{rnd.choice([TEXTO, SUAVE, VERDE])}"/>')
+              f'cx="{rnd.uniform(640, 1180):.0f}" cy="{rnd.uniform(300, 400):.0f}" r="{rnd.uniform(1.2, 2.8):.1f}" '
+              f'fill="{rnd.choice([BRASA, ACENTO, TEXTO])}"/>')
 
-    # cracha 405
-    marcas = "".join(
-        f'<line x1="{920 + 104 * math.cos(a):.1f}" y1="{200 + 104 * math.sin(a):.1f}" '
-        f'x2="{920 + (97 if i % 5 else 92) * math.cos(a):.1f}" y2="{200 + (97 if i % 5 else 92) * math.sin(a):.1f}"/>'
-        for i in range(60) for a in [i * math.tau / 60]
-    )
-    t.usa("EXAME HUNTER · CANDIDATO", 700)
-    t.usa("405", 700)
-    t.add('<g class="flutua">',
-          f'<circle cx="920" cy="200" r="114" fill="{BG0}" stroke="url(#anel)" stroke-width="3"/>',
-          f'<g class="gira" stroke="{SUAVE}" stroke-width="1.4" opacity=".35">{marcas}</g>',
-          f'<circle cx="920" cy="200" r="88" fill="{BG1}" stroke="{LINHA}" stroke-width="1.5"/>',
-          f'<text font-size="13" font-weight="700" letter-spacing="4" fill="{VERDE}">'
-          f'<textPath href="#arco-cima" startOffset="50%" text-anchor="middle">EXAME HUNTER</textPath></text>',
-          f'<text font-size="13" font-weight="700" letter-spacing="4" fill="{APAGADO}">'
-          f'<textPath href="#arco-baixo" startOffset="50%" text-anchor="middle">· CANDIDATO ·</textPath></text>',
-          f'<text x="920" y="232" font-size="92" font-weight="700" fill="{TEXTO}" text-anchor="middle" '
-          f'filter="url(#brilho)">405</text>',
-          '</g>')
+    t.add(f'<image href="{imagem("gon-jajanken.webp")}" x="{ix}" y="{iy}" width="{pw:.0f}" height="{ph:.0f}" mask="url(#mascara)"/>',
+          f'<circle class="clarao" cx="{px:.0f}" cy="{py:.0f}" r="95" fill="url(#clarao)"/>')
 
     # texto
-    t.add(f'<text x="72" y="112" font-size="15" font-weight="700" letter-spacing="4" fill="{VERDE}">'
+    t.add(f'<text x="72" y="112" font-size="15" font-weight="700" letter-spacing="4" fill="{ACENTO}">'
           f'▸ HUNTER DE CÓDIGO<tspan fill="{APAGADO}"> · BRASIL</tspan></text>')
     t.usa("▸ HUNTER DE CÓDIGO · BRASIL", 700)
-    t.txt(72, 190, "JOSÉ PISSOLATO", 66, 700, TEXTO, ls=2, extra='filter="url(#brilho)"')
+    t.txt(72, 190, "JOSÉ PISSOLATO", 66, 700, TEXTO, ls=2)
     t.txt(74, 234, "dev full-stack · desktop · web · bots · IA", 20, 400, SUAVE)
 
     # jan-ken em loop: cada pedaco aparece e fica ate o fim do ciclo
-    t.add(f'<rect x="72" y="276" width="566" height="50" rx="14" fill="{BG0}" fill-opacity=".75" stroke="{LINHA}"/>')
+    t.add(f'<rect x="72" y="276" width="566" height="50" rx="14" fill="{BG0}" fill-opacity=".8" stroke="{LINHA}"/>')
     x0, y, tam = 96, 308, 18
     cw = tam * AVANCO
-    pedacos = [("$", VERDE, 700, 0), (" saisho wa guu,", SUAVE, 400, 6), (" jan...", SUAVE, 400, 22),
-               (" ken...", SUAVE, 400, 36), (" DEPLOY!", AURA, 700, 50)]
+    pedacos = [("$", ACENTO, 700, 0), (" saisho wa guu,", SUAVE, 400, 6), (" jan...", SUAVE, 400, 22),
+               (" ken...", SUAVE, 400, 36), (" DEPLOY!", BRASA, 700, DEPLOY_EM)]
     col = 0
     cursor_pos = []
     for i, (texto, cor, peso, entra) in enumerate(pedacos):
         nome = f"jk{i}"
-        t.css.append(f".{nome}{{animation:{nome} 10s steps(1) infinite}}"
+        t.css.append(f".{nome}{{animation:{nome} {CICLO}s steps(1) infinite}}"
                      f"@keyframes {nome}{{0%{{opacity:{1 if entra == 0 else 0}}}{max(entra, 0.01)}%{{opacity:1}}92%{{opacity:0}}}}")
-        extra = f'class="{nome}"' + (' filter="url(#brilho)"' if texto.strip() == "DEPLOY!" else "")
-        recuo = len(texto) - len(texto.lstrip())
+        extra = f'class="{nome}"' + (' filter="url(#brilho)"' if "DEPLOY" in texto else "")
+        recuo = len(texto) - len(texto.lstrip())  # SVG engole espaco no comeco do <text>
         t.txt(x0 + (col + recuo) * cw, y, texto.lstrip(), tam, peso, cor, extra=extra)
         col += len(texto)
         cursor_pos.append((entra, x0 + col * cw + 3))
     quadros = "".join(f"{max(e, 0.01)}%{{transform:translateX({x - cursor_pos[0][1]:.1f}px)}}" for e, x in cursor_pos)
-    t.css.append(f".anda{{animation:anda 10s steps(1) infinite}}@keyframes anda{{0%{{transform:translateX(0)}}{quadros}92%{{transform:translateX(0)}}}}")
-    t.add(f'<g class="anda"><rect class="cursor" x="{cursor_pos[0][1]:.1f}" y="292" width="10" height="20" fill="{VERDE}"/></g>')
+    t.css.append(f".anda{{animation:anda {CICLO}s steps(1) infinite}}"
+                 f"@keyframes anda{{0%{{transform:translateX(0)}}{quadros}92%{{transform:translateX(0)}}}}")
+    t.add(f'<g class="anda"><rect class="cursor" x="{cursor_pos[0][1]:.1f}" y="292" width="10" height="20" fill="{ACENTO}"/></g>')
 
-    # capim da Ilha Baleia
-    t.add(capim(rnd, -10, 1210, 402, 18, 46, "#121419", passo=5, grupos=12),
-          capim(rnd, -10, 1210, 402, 8, 26, "#171a20", passo=6, grupos=12))
-
-    # cantos de mira
+    t.add(capim(rnd, -10, 1210, 402, 16, 40, "#121419", passo=5, grupos=12),
+          capim(rnd, -10, 1210, 402, 8, 24, "#171a20", passo=6, grupos=12))
     for x, y, sx, sy in [(20, 20, 1, 1), (1180, 20, -1, 1), (20, 380, 1, -1), (1180, 380, -1, -1)]:
         t.add(f'<path d="M{x} {y + 18 * sy}V{y}H{x + 18 * sx}" fill="none" stroke="{SUAVE}" stroke-width="2" opacity=".4"/>')
-    t.add('</g>', f'<rect x=".75" y=".75" width="1198.5" height="398.5" rx="24" fill="none" stroke="{LINHA}" stroke-width="1.5"/>')
+    fechar(t, 24)
     return t
 
 
 # ---------------------------------------------------------------- licenca
-def licenca():
+def licenca(foto):
     rnd = random.Random(1998)
     t = Tela(600, 360, "Hunter License de José Pissolato",
              "Licença Hunter: José I. Pissolato Neto, Hunter de Código, tipo de Nen Reforço, emitida em 20/05/2019.")
-    moldura(t)
     t.defs.append(
         f'<linearGradient id="fundo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{BG2}"/>'
         f'<stop offset="1" stop-color="{BG0}"/></linearGradient>'
@@ -299,14 +314,10 @@ def licenca():
     t.css.append(
         ".holo{animation:holo 7s ease-in-out infinite}"
         "@keyframes holo{0%{transform:translateX(-260px) skewX(-18deg)}55%,100%{transform:translateX(900px) skewX(-18deg)}}"
-        ".pulsa{transform-box:fill-box;transform-origin:center;animation:pulsa 4s ease-in-out infinite}"
-        "@keyframes pulsa{0%,100%{transform:scale(.9);opacity:.15}50%{transform:scale(1.1);opacity:.32}}"
         ".gira{transform-box:fill-box;transform-origin:center;animation:gira 24s linear infinite}"
-        "@keyframes gira{to{transform:rotate(360deg)}}"
-        ".vivo{animation:vivo 2s ease-in-out infinite}@keyframes vivo{50%{opacity:.35}}"
+        "@keyframes gira{to{transform:rotate(360deg)}}" + CSS_VIVO
     )
-    t.add('<g clip-path="url(#card)">', '<rect width="600" height="360" fill="url(#fundo)"/>')
-    # guilloche
+    base(t, 22, "url(#fundo)")
     for k in range(12):
         pts = " ".join(f"{x},{70 + k * 24 + 9 * math.sin(x / 38 + k * .9):.1f}" for x in range(0, 604, 8))
         t.add(f'<polyline points="{pts}" fill="none" stroke="{TEXTO}" stroke-opacity=".035" stroke-width="1"/>')
@@ -321,37 +332,33 @@ def licenca():
           f'<circle cx="546" cy="50" r="2.6" fill="{OURO}"/>',
           f'<line x1="40" y1="74" x2="560" y2="74" stroke="{OURO}" stroke-opacity=".35"/>')
 
-    # foto: silhueta com aura
-    t.add(f'<rect x="40" y="96" width="136" height="172" rx="14" fill="{BG0}"/>',
-          '<g clip-path="url(#foto)">',
-          f'<ellipse class="pulsa" cx="108" cy="190" rx="62" ry="80" fill="{VERDE}" filter="url(#nevoa-p)" opacity=".5"/>',
-          f'<circle cx="108" cy="166" r="30" fill="url(#pessoa)"/>',
-          f'<path d="M48 272c4-40 28-62 60-62s56 22 60 62z" fill="url(#pessoa)"/>',
-          '</g>',
-          f'<rect x="40" y="96" width="136" height="172" rx="14" fill="none" stroke="{LINHA}" stroke-width="1.5"/>')
+    t.add(f'<rect x="40" y="96" width="136" height="172" rx="14" fill="{BG0}"/>', '<g clip-path="url(#foto)">')
+    if foto:
+        t.add(f'<image href="{foto}" x="22" y="96" width="172" height="172" preserveAspectRatio="xMidYMid slice"/>')
+    else:
+        t.add('<circle cx="108" cy="166" r="30" fill="url(#pessoa)"/>',
+              '<path d="M48 272c4-40 28-62 60-62s56 22 60 62z" fill="url(#pessoa)"/>')
+    t.add('</g>', f'<rect x="40" y="96" width="136" height="172" rx="14" fill="none" stroke="{OURO}" stroke-opacity=".35" stroke-width="1.5"/>')
 
     campos = [(200, 112, "NOME", "José I. Pissolato Neto", TEXTO),
               (200, 168, "CLASSE", "Hunter de Código", TEXTO),
-              (200, 224, "TIPO DE NEN", "Reforço", AURA), (380, 224, "EMITIDA EM", "20.05.2019", TEXTO),
+              (200, 224, "TIPO DE NEN", "Reforço", ACENTO), (380, 224, "EMITIDA EM", "20.05.2019", TEXTO),
               (200, 280, "ORIGEM", "Brasil", TEXTO)]
     for x, y, rot, val, cor in campos:
         t.txt(x, y, rot, 12, 700, SUAVE, ls=2, extra='opacity=".75"')
         t.txt(x, y + 24, val, 19, 700, cor)
     t.txt(380, 280, "ESTADO", 12, 700, SUAVE, ls=2, extra='opacity=".75"')
-    t.add(f'<circle class="vivo" cx="386" cy="298" r="5" fill="{AURA}"/>')
+    t.add(f'<circle class="vivo" cx="386" cy="298" r="5" fill="{ACENTO}"/>')
     t.txt(398, 304, "ativa", 19, 700, TEXTO)
 
-    # codigo de barras
     x = 40
-    barras = []
     while x < 176:
         w = rnd.choice([1, 1, 2, 3])
-        barras.append(f'<rect x="{x}" y="288" width="{w}" height="30" fill="{SUAVE}" opacity=".7"/>')
+        t.add(f'<rect x="{x}" y="288" width="{w}" height="30" fill="{SUAVE}" opacity=".7"/>')
         x += w + rnd.choice([1, 2, 2, 3])
-    t.add(*barras)
     t.txt(40, 340, "github.com/NetoPissolato", 12, 400, APAGADO)
     t.txt(560, 340, "acesso a 90% dos países", 12, 400, APAGADO, anchor="end")
-    t.add('</g>', f'<rect x=".75" y=".75" width="598.5" height="358.5" rx="22" fill="none" stroke="{OURO}" stroke-opacity=".45" stroke-width="1.5"/>')
+    fechar(t, 22, OURO, .45)
     return t
 
 
@@ -371,7 +378,6 @@ def nen():
              "Hexágono do Nen usado como mapa de habilidades. Reforço é backend, Transformação é front-end, "
              "Materialização é desktop, Especialização é IA, Manipulação é bots, Emissão é tempo real. "
              "No copo, a água sobe e transborda: resultado Reforço.")
-    moldura(t)
     cx, cy, R = 300, 214, 94
     t.defs.append(
         f'<radialGradient id="fundo" cx="50%" cy="58%" r="70%"><stop offset="0" stop-color="{BG2}"/>'
@@ -392,12 +398,11 @@ def nen():
     pt = lambda i, r: (cx + r * math.cos(ang[i]), cy + r * math.sin(ang[i]))
     poly = lambda r: " ".join(f"{pt(i, r)[0]:.1f},{pt(i, r)[1]:.1f}" for i in range(6))
 
-    t.add('<g clip-path="url(#card)">', '<rect width="600" height="360" fill="url(#fundo)"/>')
+    base(t, 22, "url(#fundo)")
     t.txt(40, 50, "TESTE DA ÁGUA", 20, 700, TEXTO, ls=4)
     t.add(f'<text x="560" y="50" font-size="14" font-weight="700" text-anchor="end" fill="{SUAVE}">'
-          f'resultado: <tspan fill="{AURA}">REFORÇO</tspan></text>')
+          f'resultado: <tspan fill="{ACENTO}">REFORÇO</tspan></text>')
     t.usa("resultado: REFORÇO", 700)
-
     for k in (1 / 3, 2 / 3, 1):
         t.add(f'<polygon points="{poly(R * k)}" fill="none" stroke="{LINHA}" stroke-width="{1.6 if k == 1 else 1}"/>')
     for i in range(6):
@@ -406,18 +411,16 @@ def nen():
 
     valores = " ".join(f"{pt(i, R * n)[0]:.1f},{pt(i, R * n)[1]:.1f}" for i, (_, _, n) in enumerate(NEN))
     t.add('<g class="radar">',
-          f'<polygon points="{valores}" fill="{VERDE}" fill-opacity=".1" filter="url(#nevoa-p)"/>',
-          f'<polygon points="{valores}" fill="{VERDE}" fill-opacity=".1" stroke="{VERDE}" stroke-width="1.8" stroke-linejoin="round"/>',
+          f'<polygon points="{valores}" fill="{ACENTO}" fill-opacity=".12" filter="url(#nevoa-p)"/>',
+          f'<polygon points="{valores}" fill="{ACENTO}" fill-opacity=".1" stroke="{ACENTO}" stroke-width="1.8" stroke-linejoin="round"/>',
           *[f'<circle cx="{pt(i, R * n)[0]:.1f}" cy="{pt(i, R * n)[1]:.1f}" r="{5 if i == 0 else 3.5}" '
-            f'fill="{AURA if i == 0 else VERDE}"/>' for i, (_, _, n) in enumerate(NEN)],
+            f'fill="{BRASA if i == 0 else ACENTO}"/>' for i, (_, _, n) in enumerate(NEN)],
           '</g>')
-
-    # rotulos
     for i, (tipo, hab, _) in enumerate(NEN):
         x, y = pt(i, R)
-        cor = AURA if i == 0 else TEXTO
+        cor = ACENTO if i == 0 else TEXTO
         if i == 0:
-            t.txt(x, y - 30, tipo, 15, 700, cor, anchor="middle", ls=1, extra='filter="url(#brilho)"')
+            t.txt(x, y - 30, tipo, 15, 700, cor, anchor="middle", ls=1)
             t.txt(x, y - 13, hab, 13, 400, SUAVE, anchor="middle")
         elif i == 3:
             t.txt(x, y + 24, tipo, 15, 700, cor, anchor="middle", ls=1)
@@ -434,68 +437,102 @@ def nen():
           f'<rect x="{cx - 24}" y="{cy - 24}" width="48" height="60" fill="{AGUA}" fill-opacity=".4"/>',
           f'<rect x="{cx - 24}" y="{cy - 24}" width="48" height="2" fill="#d8ecff" fill-opacity=".9"/>',
           '</g></g>',
-          f'<g class="agua"><ellipse cx="{cx + 3}" cy="{cy - 26}" rx="8" ry="3" fill="{VERDE}" '
+          f'<g class="agua"><ellipse cx="{cx + 3}" cy="{cy - 26}" rx="8" ry="3" fill="{GRAMA}" '
           f'transform="rotate(-14 {cx + 3} {cy - 26})"/></g>',
           f'<path d="M{cx - 19} {cy - 24}l4 48h30l4-48" fill="none" stroke="{TEXTO}" stroke-opacity=".6" stroke-width="2" '
           f'stroke-linejoin="round"/>',
           f'<circle class="gota" cx="{cx - 21}" cy="{cy - 22}" r="2.4" fill="{AGUA}"/>',
           f'<circle class="gota" style="animation-delay:.5s" cx="{cx + 21}" cy="{cy - 22}" r="2.4" fill="{AGUA}"/>')
-    t.add('</g>', f'<rect x=".75" y=".75" width="598.5" height="358.5" rx="22" fill="none" stroke="{LINHA}" stroke-width="1.5"/>')
+    fechar(t)
     return t
 
 
 # ---------------------------------------------------------------- arcos
 ICONES = {
-    "tela": 'M-17 -13h34v22h-34zM-7 15h14M0 9v6',
     "memoria": 'M-12 -10a5 5 0 1 0 0.1 0M12 -10a5 5 0 1 0 0.1 0M0 11a5 5 0 1 0 0.1 0M-8 -7L-3 7M8 -7L3 7M-7 -10H7',
     "carro": 'M-19 6v-6l5 -9h20l7 9h6v6zM-11 6a4 4 0 1 0 0.1 0M11 6a4 4 0 1 0 0.1 0',
 }
 
 
-def arco(n, titulo, linhas, chips, estado, icone, link=None):
-    rnd = random.Random(n)
-    t = Tela(400, 250, f"Arco {n:02d}: {titulo}", " ".join(linhas))
-    moldura(t, 20)
+def chips(t, x0, y, itens, tam, limite):
+    x = x0
+    for c in itens:
+        w = largura(c, tam) + tam * 2
+        if x + w > limite:
+            x, y = x0, y + tam * 2.8
+        t.add(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{tam * 2.1:.1f}" rx="{tam * 1.05:.1f}" '
+              f'fill="{BG0}" stroke="{LINHA}"/>')
+        t.txt(x + tam, y + tam * 1.42, c, tam, 400, CLARO)
+        x += w + 10
+    return y
+
+
+def borda_corrente(t, rx, dur):
+    t.defs.append(f'<linearGradient id="borda" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{BRASA}"/>'
+                  f'<stop offset="1" stop-color="{ACENTO}"/></linearGradient>')
+    t.css.append(f".corre{{animation:corre {dur}s linear infinite}}@keyframes corre{{to{{stroke-dashoffset:-100}}}}")
+    t.add(f'<rect class="corre" x=".75" y=".75" width="{t.w - 1.5}" height="{t.h - 1.5}" rx="{rx}" fill="none" '
+          f'stroke="url(#borda)" stroke-width="1.5" pathLength="100" stroke-dasharray="8 92" stroke-linecap="round" opacity=".85"/>')
+
+
+def arco_destaque():
+    rnd = random.Random(1)
+    t = Tela(1200, 270, "Arco 01: Spacercord",
+             "Projeto em destaque. Spacercord: compartilhe a tela com os amigos escolhendo exatamente quais "
+             "programas levam áudio junto. Electron, C++ nativo, WebRTC e LiveKit. Versão 0.21.1.")
     t.defs.append(
-        f'<linearGradient id="fundo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{BG2}"/>'
+        f'<linearGradient id="fundo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{BG2}"/>'
         f'<stop offset="1" stop-color="{BG0}"/></linearGradient>'
-        f'<linearGradient id="borda" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{AURA}"/>'
-        f'<stop offset="1" stop-color="{VERDE}"/></linearGradient>'
         + FILTROS
     )
-    dur = 7 + n
-    t.css.append(
-        f".corre{{animation:corre {dur}s linear infinite}}@keyframes corre{{to{{stroke-dashoffset:-100}}}}"
-        ".vivo{animation:vivo 2s ease-in-out infinite}@keyframes vivo{50%{opacity:.3}}"
-    )
-    t.add('<g clip-path="url(#card)">', '<rect width="400" height="250" fill="url(#fundo)"/>')
-    t.txt(378, 92, f"{n:02d}", 96, 700, TEXTO, anchor="end", extra='opacity=".05"')
-    t.add(f'<rect x="28" y="28" width="52" height="52" rx="14" fill="{BG0}" stroke="{LINHA}"/>',
-          f'<path transform="translate(54 54)" d="{ICONES[icone]}" fill="none" stroke="{VERDE}" stroke-width="2.2" '
+    t.css.append(CSS_VIVO + ".barra{transform-box:fill-box;transform-origin:50% 100%;animation:barra 1.2s ease-in-out infinite alternate}"
+                 "@keyframes barra{from{transform:scaleY(.15)}to{transform:scaleY(1)}}")
+    base(t, 22, "url(#fundo)")
+
+    # marca do Spacercord num circulo com anel ambar
+    t.add(f'<circle cx="130" cy="135" r="86" fill="{ACENTO}" filter="url(#nevoa)" opacity=".12"/>',
+          f'<circle cx="130" cy="135" r="72" fill="{BG0}" stroke="{ACENTO}" stroke-opacity=".6" stroke-width="2"/>',
+          f'<image href="{imagem("spacercord.png")}" x="82" y="97" width="96" height="75"/>')
+
+    t.txt(250, 68, "ARCO 01 · PROJETO EM DESTAQUE", 13, 700, ACENTO, ls=3)
+    t.txt(250, 108, "SPACERCORD", 36, 700, TEXTO, ls=1)
+    for i, linha in enumerate(quebrar("Compartilhe a tela com os amigos escolhendo exatamente quais programas levam áudio junto.", 18, 560)):
+        t.txt(250, 146 + i * 26, linha, 18, 400, SUAVE)
+    chips(t, 250, 196, ["Electron", "C++ nativo", "WebRTC", "LiveKit", "Node.js"], 14, 840)
+
+    # equalizador: um canal de audio por programa
+    x0, chao = 900, 150
+    for i in range(16):
+        h = rnd.uniform(30, 90)
+        t.add(f'<rect class="barra" style="animation-delay:-{rnd.uniform(0, 1.2):.2f}s;animation-duration:{rnd.uniform(.6, 1.4):.2f}s" '
+              f'x="{x0 + i * 16}" y="{chao - h:.0f}" width="9" height="{h:.0f}" rx="3" '
+              f'fill="{ACENTO if i % 4 else BRASA}" opacity="{.35 + (i % 4) * .15:.2f}"/>')
+    t.add(f'<rect x="900" y="176" width="252" height="48" rx="14" fill="{ACENTO}" fill-opacity=".1" stroke="{ACENTO}" stroke-opacity=".7"/>')
+    t.txt(1026, 207, "baixar a v0.21.1 →", 16, 700, BRASA, anchor="middle")
+    borda_corrente(t, 22, 9)
+    fechar(t)
+    return t
+
+
+def arco(n, titulo, texto, itens, estado, icone):
+    t = Tela(600, 290, f"Arco {n:02d}: {titulo}", texto)
+    t.defs.append(f'<linearGradient id="fundo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{BG2}"/>'
+                  f'<stop offset="1" stop-color="{BG0}"/></linearGradient>')
+    t.css.append(CSS_VIVO)
+    base(t, 22, "url(#fundo)")
+    t.txt(572, 118, f"{n:02d}", 120, 700, TEXTO, anchor="end", extra='opacity=".04"')
+    t.add(f'<rect x="36" y="36" width="64" height="64" rx="18" fill="{BG0}" stroke="{LINHA}"/>',
+          f'<path transform="translate(68 68) scale(1.25)" d="{ICONES[icone]}" fill="none" stroke="{ACENTO}" stroke-width="2" '
           f'stroke-linecap="round" stroke-linejoin="round"/>')
-    if icone == "tela":
-        t.add(f'<path transform="translate(54 54)" d="M22 -9a9 9 0 0 1 0 12M26 -13a15 15 0 0 1 0 20" fill="none" '
-              f'stroke="{VERDE}" stroke-width="2" stroke-linecap="round" class="vivo"/>')
-    t.txt(96, 48, f"ARCO {n:02d}", 12, 700, VERDE, ls=3)
-    t.txt(96, 76, titulo, 22, 700, TEXTO)
-    for i, linha in enumerate(linhas):
-        t.txt(28, 120 + i * 22, linha, 15, 400, SUAVE)
-    x, y = 28, 162
-    for c in chips:
-        w = largura(c, 12) + 22
-        if x + w > 372:
-            x, y = 28, y + 32
-        t.add(f'<rect x="{x:.1f}" y="{y}" width="{w:.1f}" height="24" rx="12" fill="{BG0}" stroke="{LINHA}"/>')
-        t.txt(x + 11, y + 16, c, 12, 400, MENTA)
-        x += w + 8
-    t.add(f'<circle class="vivo" cx="33" cy="222" r="4.5" fill="{AURA}"/>')
-    t.txt(46, 227, estado, 13, 400, SUAVE)
-    if link:
-        t.txt(372, 227, link, 13, 700, VERDE, anchor="end")
-    t.add('</g>',
-          f'<rect x=".75" y=".75" width="398.5" height="248.5" rx="20" fill="none" stroke="{LINHA}" stroke-width="1.5"/>',
-          f'<rect class="corre" x=".75" y=".75" width="398.5" height="248.5" rx="20" fill="none" stroke="url(#borda)" '
-          f'stroke-width="1.5" pathLength="100" stroke-dasharray="10 90" stroke-linecap="round" opacity=".8"/>')
+    t.txt(120, 60, f"ARCO {n:02d}", 14, 700, ACENTO, ls=3)
+    t.txt(120, 92, titulo, 28, 700, TEXTO)
+    for i, linha in enumerate(quebrar(texto, 19, 528)):
+        t.txt(36, 144 + i * 27, linha, 19, 400, SUAVE)
+    chips(t, 36, 190, itens, 15, 564)
+    t.add(f'<circle class="vivo" cx="42" cy="258" r="5" fill="{ACENTO}"/>')
+    t.txt(56, 264, estado, 16, 400, SUAVE)
+    borda_corrente(t, 22, 7 + n)
+    fechar(t)
     return t
 
 
@@ -503,7 +540,7 @@ def titulo_secao(texto, sub):
     t = Tela(1200, 64, texto, sub)
     t.defs.append(f'<linearGradient id="some" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="{CINZA}" stop-opacity=".5"/>'
                   f'<stop offset="1" stop-color="{CINZA}" stop-opacity="0"/></linearGradient>')
-    t.add(f'<rect x="2" y="18" width="5" height="26" rx="2.5" fill="{VERDE}"/>')
+    t.add(f'<rect x="2" y="18" width="5" height="26" rx="2.5" fill="{ACENTO}"/>')
     t.txt(20, 40, texto, 26, 700, CINZA, ls=6)
     x = 20 + largura(texto, 26, 6) + 16
     t.txt(x, 40, sub, 15, 400, CINZA)
@@ -555,19 +592,24 @@ def floresta(total, dias):
     rnd = random.Random(7)
     atual, recorde = sequencias(dias)
     melhor = max(dias, key=lambda d: d[1])
-    t = Tela(1200, 320, "Treino diário: contribuições do último ano",
-             f"{total} contribuições no último ano. Sequência atual de {atual} dias, recorde de {recorde}. "
-             "Cada folha de capim é um dia; quanto mais contribuições, mais alta a folha.")
-    moldura(t)
-    base = 262
+    W, H, chao = 1200, 340, 290
+    t = Tela(W, H, "Treino diário: contribuições do último ano",
+             f"Gon pescando ao lado do gráfico. {total} contribuições no último ano, sequência atual de {atual} dias, "
+             f"recorde de {recorde}. Cada folha de capim é um dia; quanto mais contribuições, mais alta a folha.")
+    # imagem espelhada 884x491, ocupa a esquerda e some antes do grafico
+    ih = H
+    iw = 884 * ih / 491
     t.defs.append(
         f'<linearGradient id="ceu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{BG0}"/>'
         f'<stop offset="1" stop-color="{BG2}"/></linearGradient>'
         f'<linearGradient id="chao" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{BG1}"/>'
         f'<stop offset="1" stop-color="{BG0}"/></linearGradient>'
+        f'<linearGradient id="some" gradientUnits="userSpaceOnUse" x1="{iw - 380:.0f}" y1="0" x2="{iw:.0f}" y2="0">'
+        '<stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>'
+        f'<mask id="mascara"><rect width="{W}" height="{H}" fill="url(#some)"/></mask>'
         + "".join(
-            f'<linearGradient id="f{i}" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="{VERDE_ESC}"/>'
-            f'<stop offset="1" stop-color="{c}"/></linearGradient>' for i, c in enumerate([VERDE_ESC, VERDE, AURA]))
+            f'<linearGradient id="f{i}" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="{GRAMA_ESC}"/>'
+            f'<stop offset="1" stop-color="{c}"/></linearGradient>' for i, c in enumerate([GRAMA_ESC, GRAMA, GRAMA_CLARA]))
         + FILTROS
     )
     t.css.append(
@@ -579,37 +621,35 @@ def floresta(total, dias):
         ".faisca{animation:faisca 3.5s ease-out infinite}"
         "@keyframes faisca{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(-40px);opacity:0}}"
     )
-    t.add('<g clip-path="url(#card)">', '<rect width="1200" height="320" fill="url(#ceu)"/>')
-    for _ in range(80):
-        t.add(f'<circle class="brilha" style="animation-delay:-{rnd.uniform(0, 3):.1f}s" cx="{rnd.uniform(0, 1200):.0f}" '
-              f'cy="{rnd.uniform(8, 200):.0f}" r="{rnd.uniform(.5, 1.4):.1f}" fill="{TEXTO}" opacity=".6"/>')
-    t.add(f'<circle cx="1096" cy="74" r="60" fill="#fff1cc" filter="url(#nevoa)" opacity=".18"/>',
-          '<circle cx="1096" cy="74" r="26" fill="#f4efe2"/>',
-          '<circle cx="1087" cy="67" r="5" fill="#d8d0bd" opacity=".6"/><circle cx="1104" cy="84" r="3.5" fill="#d8d0bd" opacity=".6"/>')
+    base(t, 22, "url(#ceu)")
+    for _ in range(60):
+        t.add(f'<circle class="brilha" style="animation-delay:-{rnd.uniform(0, 3):.1f}s" cx="{rnd.uniform(560, 1200):.0f}" '
+              f'cy="{rnd.uniform(8, 200):.0f}" r="{rnd.uniform(.5, 1.3):.1f}" fill="{TEXTO}" opacity=".55"/>')
+    t.add(f'<image href="{imagem("gon-pescando.webp")}" x="0" y="0" width="{iw:.0f}" height="{ih}" '
+          f'preserveAspectRatio="xMinYMid slice" mask="url(#mascara)"/>',
+          f'<rect width="{iw:.0f}" height="{ih}" fill="{BG0}" opacity=".18" mask="url(#mascara)"/>')
 
+    x0, x1 = 640, 1160
     maximo = max(1, max(c for _, c in dias))
     n = len(dias)
-    x0, x1 = 40, 1160
     passo = (x1 - x0) / max(1, n - 1)
     folhas, altas = [], []
     for i, (d, c) in enumerate(dias):
         x = x0 + i * passo
-        dobra = rnd.uniform(-4, 4)
-        w = 1.5
+        dobra = rnd.uniform(-3, 3)
+        w = 1.1
         if c:
             k = math.sqrt(c / maximo)
-            h = 22 + 90 * k
+            h = 20 + 100 * k
             g = 2 if k > .66 else 1 if k > .33 else 0
             if k > .66:
-                altas.append((x + dobra, base - h))
+                altas.append((x + dobra, chao - h))
         else:
-            h, g = rnd.uniform(5, 14), None
-        path = (f"M{x - w:.1f} {base}Q{x - w + dobra * .3:.1f} {base - h * .5:.1f} {x + dobra:.1f} {base - h:.1f}"
-                f"Q{x + w + dobra * .3:.1f} {base - h * .5:.1f} {x + w:.1f} {base}Z")
-        folhas.append((path, g))
-    grupo = 24
-    for i in range(0, n, grupo):
-        pedaco = folhas[i:i + grupo]
+            h, g = rnd.uniform(4, 12), None
+        folhas.append((f"M{x - w:.1f} {chao}Q{x - w + dobra * .3:.1f} {chao - h * .5:.1f} {x + dobra:.1f} {chao - h:.1f}"
+                       f"Q{x + w + dobra * .3:.1f} {chao - h * .5:.1f} {x + w:.1f} {chao}Z", g))
+    for i in range(0, n, 24):
+        pedaco = folhas[i:i + 24]
         mortas = "".join(p for p, g in pedaco if g is None)
         vivas = {k: "".join(p for p, g in pedaco if g == k) for k in (0, 1, 2)}
         t.add(f'<g class="balanca" style="animation-duration:{rnd.uniform(4.5, 7.5):.1f}s;animation-delay:-{rnd.uniform(0, 5):.1f}s">',
@@ -618,26 +658,53 @@ def floresta(total, dias):
               '</g>')
     for x, y in altas:
         t.add(f'<circle class="faisca" style="animation-delay:-{rnd.uniform(0, 3.5):.1f}s" cx="{x:.1f}" cy="{y - 4:.1f}" r="2" fill="{VAGALUME}"/>')
-    for _ in range(12):
+    for _ in range(9):
         t.add(f'<circle class="vaga" style="animation-delay:-{rnd.uniform(0, 9):.1f}s;animation-duration:{rnd.uniform(7, 12):.1f}s" '
-              f'cx="{rnd.uniform(60, 1140):.0f}" cy="{rnd.uniform(150, 245):.0f}" r="2.2" fill="{VAGALUME}" filter="url(#brilho)"/>')
+              f'cx="{rnd.uniform(660, 1140):.0f}" cy="{rnd.uniform(190, 270):.0f}" r="2.2" fill="{VAGALUME}"{BRILHO}/>')
 
-    t.add(f'<rect x="0" y="{base}" width="1200" height="{320 - base}" fill="url(#chao)"/>',
-          f'<line x1="0" y1="{base}" x2="1200" y2="{base}" stroke="{LINHA}" stroke-width="1.5"/>')
+    t.add(f'<rect x="{x0 - 20}" y="{chao}" width="{W - x0 + 20}" height="{H - chao}" fill="url(#chao)"/>',
+          f'<line x1="{x0 - 20}" y1="{chao}" x2="{W}" y2="{chao}" stroke="{LINHA}" stroke-width="1.5"/>')
     for i, (d, _) in enumerate(dias):
         if d.day == 1:
             x = x0 + i * passo
-            t.add(f'<line x1="{x:.1f}" y1="{base + 4}" x2="{x:.1f}" y2="{base + 10}" stroke="{APAGADO}"/>')
-            t.txt(x + 4, base + 24, MESES[d.month - 1], 12, 400, APAGADO)
-    t.txt(1160, 306, "cada folha é um dia · a altura é o quanto treinei", 12, 400, APAGADO, anchor="end")
+            t.add(f'<line x1="{x:.1f}" y1="{chao + 4}" x2="{x:.1f}" y2="{chao + 9}" stroke="{APAGADO}"/>')
+            t.txt(x + 3, chao + 22, MESES[d.month - 1], 12, 400, APAGADO)
+    t.txt(x1, H - 10, "cada folha é um dia", 11, 400, APAGADO, anchor="end")
 
-    t.txt(40, 50, "TREINO DIÁRIO", 14, 700, SUAVE, ls=4)
+    t.txt(x0, 56, "TREINO DIÁRIO", 14, 700, ACENTO, ls=4)
     num = str(total)
-    t.txt(40, 102, num, 48, 700, TEXTO, extra='filter="url(#brilho)"')
-    t.txt(40 + largura(num, 48) + 14, 100, "contribuições no último ano", 17, 400, SUAVE)
+    t.txt(x0, 108, num, 48, 700, TEXTO)
+    t.txt(x0 + largura(num, 48) + 14, 106, "contribuições no último ano", 17, 400, SUAVE)
     dia_melhor = f"{melhor[0].day:02d}/{melhor[0].month:02d}"
-    t.txt(40, 132, f"sequência atual {atual} · recorde {recorde} · melhor dia {melhor[1]} ({dia_melhor})", 14, 400, SUAVE)
-    t.add('</g>', f'<rect x=".75" y=".75" width="1198.5" height="318.5" rx="22" fill="none" stroke="{LINHA}" stroke-width="1.5"/>')
+    t.txt(x0, 138, f"sequência atual {atual} · recorde {recorde} · melhor dia {melhor[1]} ({dia_melhor})", 14, 400, SUAVE)
+    fechar(t)
+    return t
+
+
+# ---------------------------------------------------------------- rodape
+def rodape():
+    t = Tela(1200, 240, "Valeu pela visita!", "Gon fazendo sinal de paz, aparecendo pela borda de baixo.")
+    t.defs.append(
+        f'<radialGradient id="fundo" cx="80%" cy="100%" r="70%"><stop offset="0" stop-color="#201c17"/>'
+        f'<stop offset="1" stop-color="{BG1}"/></radialGradient>' + FILTROS)
+    t.css.append(".espia{animation:espia 5s ease-in-out infinite}"
+                 "@keyframes espia{0%,100%{transform:translateY(8px)}50%{transform:translateY(0)}}")
+    base(t, 22, "url(#fundo)")
+    pontos(t)
+    # 620x383, corte reto embaixo encostado na borda
+    h = 226
+    w = 620 * h / 383
+    t.add(f'<ellipse cx="{1200 - 70 - w / 2:.0f}" cy="240" rx="260" ry="150" fill="{ACENTO}" filter="url(#nevoa)" opacity=".16"/>',
+          f'<g class="espia"><image href="{imagem("gon-paz.webp")}" x="{1200 - 70 - w:.0f}" y="{240 - h + 2}" '
+          f'width="{w:.0f}" height="{h}"/></g>')
+    t.txt(72, 98, "VALEU PELA VISITA!", 38, 700, TEXTO, ls=2)
+    t.txt(74, 136, "se curtiu algum projeto, deixa uma estrela", 18, 400, SUAVE)
+    t.add(f'<text x="74" y="186" font-size="14" font-weight="700" letter-spacing="3" fill="{ACENTO}">'
+          f'saisho wa guu · jan · ken<tspan fill="{APAGADO}" font-weight="400" letter-spacing="0">'
+          f' — até a próxima caçada</tspan></text>')
+    t.usa("saisho wa guu · jan · ken", 700)
+    t.usa(" — até a próxima caçada", 400)
+    fechar(t)
     return t
 
 
@@ -645,15 +712,15 @@ def floresta(total, dias):
 def main():
     print("gerando:")
     cabecalho().salvar("cabecalho.svg")
-    licenca().salvar("licenca.svg")
+    licenca(avatar()).salvar("licenca.svg")
     nen().salvar("nen.svg")
     titulo_secao("ARCOS", "o que eu tô construindo").salvar("secao-arcos.svg")
-    arco(1, "SPACERCORD", ["Compartilhe a tela escolhendo quais", "programas levam áudio junto."],
-         ["Electron", "C++ nativo", "WebRTC", "LiveKit"], "v0.21.1 lançada", "tela", "releases →").salvar("arco-1.svg")
-    arco(2, "JARVIS", ["Memória de código persistente pra", "agentes de IA. Sabe onde tudo está."],
+    arco_destaque().salvar("arco-1.svg")
+    arco(2, "JARVIS", "Memória de código persistente pra agentes de IA. Sabe onde cada coisa está no projeto.",
          ["Node.js", "MCP", "tree-sitter", "SQLite"], "em uso todo dia", "memoria").salvar("arco-2.svg")
-    arco(3, "ERP CONCESSIONÁRIA", ["Gestão completa de concessionária:", "API, painel web e deploy em VPS."],
+    arco(3, "ERP CONCESSIONÁRIA", "Gestão completa de concessionária: API, painel web e deploy em VPS.",
          ["FastAPI", "Next.js", "PostgreSQL", "Docker"], "Docker + Nginx em VPS", "carro").salvar("arco-3.svg")
+    rodape().salvar("rodape.svg")
 
     dados = contribuicoes()
     if dados is None:
