@@ -1,4 +1,4 @@
-<img src="assets/cabecalho.svg?v=ebc77c32" width="100%" alt="José Pissolato, Hunter de código: o Gon carrega o Jajanken ao lado do nome enquanto o terminal digita saisho wa guu, jan, ken, DEPLOY" />
+<img src="assets/cabecalho.svg?v=f175f119" width="100%" alt="José Pissolato, Hunter de código: o Gon carrega o Jajanken ao lado do nome enquanto o terminal digita saisho wa guu, jan, ken, DEPLOY" />
 
 <p align="center">
   Faço software de ponta a ponta: do C++ nativo dentro de um app Electron até o ERP rodando em VPS.<br/>
@@ -6,19 +6,19 @@
 </p>
 
 <p align="center">
-  <img src="assets/licenca.svg?v=8ef8b667" width="49%" alt="Hunter License: José I. Pissolato Neto, Hunter de Código, Nen tipo Reforço, emitida em 20/05/2019" />
-  <img src="assets/nen.svg?v=6ca96794" width="49%" alt="Teste da água: hexágono do Nen como mapa de habilidades, resultado Reforço" />
+  <img src="assets/licenca.svg?v=1066bb2e" width="49%" alt="Hunter License: José I. Pissolato Neto, Hunter de Código, Nen tipo Reforço, emitida em 20/05/2019" />
+  <img src="assets/nen.svg?v=bc616402" width="49%" alt="Teste da água: hexágono do Nen como mapa de habilidades, resultado Reforço" />
 </p>
 
-<img src="assets/secao-arcos.svg?v=89f067f6" width="100%" alt="Arcos: o que eu tô construindo" />
+<img src="assets/secao-arcos.svg?v=c3ce2b63" width="100%" alt="Arcos: o que eu tô construindo" />
 
-<a href="https://github.com/NetoPissolato/spacercord-releases/releases"><img src="assets/arco-1.svg?v=e51250a9" width="100%" alt="Arco 01, projeto em destaque, Spacercord: compartilhe a tela escolhendo quais programas levam áudio junto. Baixar a versão 0.21.1" /></a>
+<a href="https://github.com/NetoPissolato/spacercord-releases/releases"><img src="assets/arco-1.svg?v=bde6d4c5" width="100%" alt="Arco 01, projeto em destaque, Spacercord: compartilhe a tela escolhendo quais programas levam áudio junto. Baixar a versão 0.21.1" /></a>
 
 <p align="center">
-  <img src="assets/arco-2.svg?v=ec90df3f" width="49%" alt="Arco 02, Jarvis: memória de código persistente pra agentes de IA" />
-  <img src="assets/arco-3.svg?v=ca86df93" width="49%" alt="Arco 03, ERP de concessionária: API, painel web e deploy em VPS" />
+  <img src="assets/arco-2.svg?v=c95f6471" width="49%" alt="Arco 02, Jarvis: memória de código persistente pra agentes de IA" />
+  <img src="assets/arco-3.svg?v=c8156070" width="49%" alt="Arco 03, ERP de concessionária: API, painel web e deploy em VPS" />
 </p>
 
-<img src="assets/floresta.svg?v=0805e39b" width="100%" alt="Treino diário: o Gon pesca ao lado do gráfico; cada folha de capim é um dia de contribuições no último ano" />
+<img src="assets/floresta.svg?v=445bd41f" width="100%" alt="Treino diário: o Gon pesca ao lado do gráfico; cada folha de capim é um dia de contribuições no último ano" />
 
-<img src="assets/rodape.svg?v=4a15f5fb" width="100%" alt="Valeu pela visita! O Gon faz sinal de paz" />
+<img src="assets/rodape.svg?v=8001ab19" width="100%" alt="Valeu pela visita! O Gon faz sinal de paz" />
